@@ -11,6 +11,10 @@ https://youtu.be/X7CC5jrgazo
 
 KV或R2变量名：`SUB_BUCKET`
 
+### KV订阅短链接
+
+新增功能与部署说明见 [SHORT-LINK-SETUP.md](SHORT-LINK-SETUP.md)。短链功能需要额外绑定一个名为 `SHORT_LINKS` 的 Workers KV namespace，保留原有 `SUB_BUCKET` 绑定。
+
 ### 支持反代转换的协议
  - shadowsocks
  - shadowsocksR
