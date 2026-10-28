@@ -2945,7 +2945,7 @@ var src_default = {
       );
       // Inject a short-link row beside the generated subscription URL in the Vue panel.
       const shortUiAnchor = '),t("el-form-item",{staticStyle:{"margin-top":"40px","text-align":"center"},attrs:{"label-width":"0px"}}';
-      const shortUiRow = '),t("el-form-item",{attrs:{label:"订阅短链:"}},[t("el-input",{staticClass:"copy-content",attrs:{disabled:"",placeholder:"点击右侧生成短链接"},model:{value:e.curtomShortSubUrl,callback:function(t){e.curtomShortSubUrl=t},expression:"curtomShortSubUrl"}},[t("el-button",{attrs:{slot:"append",type:"primary",loading:e.loading},slot:"append",on:{click:e.makeShortUrl}},[e._v("生成并复制")])],1)],1),' + shortUiAnchor;
+      const shortUiRow = '),t("el-form-item",{attrs:{label:"订阅短链:"}},[t("el-input",{staticClass:"copy-content",attrs:{disabled:"",placeholder:"点击右侧生成短链接"},model:{value:e.curtomShortSubUrl,callback:function(t){e.curtomShortSubUrl=t},expression:"curtomShortSubUrl"}},[t("el-button",{attrs:{slot:"append",type:"primary",loading:e.loading},slot:"append",on:{click:e.makeShortUrl}},[e._v("生成并复制")])],1)],1),' + shortUiAnchor.slice(2);
       if (modifiedHtml.includes(shortUiAnchor)) {
         modifiedHtml = modifiedHtml.replace(shortUiAnchor, shortUiRow);
       }
