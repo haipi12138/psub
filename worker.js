@@ -2920,6 +2920,7 @@ var src_default = {
     const host = url.origin;
     const frontendUrl = 'https://raw.githubusercontent.com/bulianglin/psub/main/frontend.html';
     const SUB_BUCKET = env.SUB_BUCKET;
+    const SHORT_KV = env.SHORT_LINKS;
     let backend = env.BACKEND.replace(/(https?:\/\/[^/]+).*$/, "$1");
     const subDir = "subscription";
     const pathSegments = url.pathname.split("/").filter((segment) => segment.length > 0);
@@ -2929,7 +2930,15 @@ var src_default = {
         return new Response('Failed to fetch frontend', { status: response.status });
       }
       const originalHtml = await response.text();
-      const modifiedHtml = originalHtml.replace(/https:\/\/bulianglin2023\.dev/, host);
+      let modifiedHtml = originalHtml.replace(/https:\/\/bulianglin2023\.dev/, host);
+      // Route the panel's built-in short-link action to this Worker.
+      modifiedHtml = modifiedHtml.replace(/https:\/\/suo\.yt\/short/g, host + "/short");
+      // Inject a short-link row beside the generated subscription URL in the Vue panel.
+      const shortUiAnchor = '),t("el-form-item",{staticStyle:{"margin-top":"40px","text-align":"center"},attrs:{"label-width":"0px"}}';
+      const shortUiRow = '),t("el-form-item",{attrs:{label:"订阅短链:"}},[t("el-input",{staticClass:"copy-content",attrs:{disabled:"",placeholder:"点击右侧生成短链接"},model:{value:e.curtomShortSubUrl,callback:function(t){e.curtomShortSubUrl=t},expression:"curtomShortSubUrl"}},[t("el-button",{attrs:{slot:"append",type:"primary",loading:e.loading},slot:"append",on:{click:e.makeShortUrl}},[e._v("生成并复制")])],1)],1),' + shortUiAnchor;
+      if (modifiedHtml.includes(shortUiAnchor)) {
+        modifiedHtml = modifiedHtml.replace(shortUiAnchor, shortUiRow);
+      }
       return new Response(modifiedHtml, {
         status: 200,
         headers: {
@@ -2948,6 +2957,103 @@ var src_default = {
       } else {
         const headers = object_headers ? new Headers(JSON.parse(object_headers)) : new Headers({ "Content-Type": "text/plain;charset=UTF-8" });
         return new Response(object, { headers });
+      }
+    }
+
+    // KV-backed subscription short-link API; frontend sends longUrl as Base64 FormData.
+    if (url.pathname === "/short" && request.method === "POST") {
+      const jsonHeaders = {
+        "Content-Type": "application/json; charset=UTF-8",
+        "Cache-Control": "no-store"
+      };
+      const jsonResult = (body, status = 200) =>
+        new Response(JSON.stringify(body), { status, headers: jsonHeaders });
+
+      if (!SHORT_KV || typeof SHORT_KV.put !== "function" || typeof SHORT_KV.get !== "function") {
+        return jsonResult({
+          Code: 0,
+          ShortUrl: "",
+          Message: "请先在 Worker 中绑定名为 SHORT_LINKS 的 KV 命名空间"
+        }, 500);
+      }
+
+      try {
+        const form = await request.formData();
+        const encodedLongUrl = form.get("longUrl");
+        if (typeof encodedLongUrl !== "string" || !encodedLongUrl.trim()) {
+          return jsonResult({ Code: 0, ShortUrl: "", Message: "缺少 longUrl 参数" }, 400);
+        }
+        if (encodedLongUrl.length > 20000) {
+          return jsonResult({ Code: 0, ShortUrl: "", Message: "订阅链接过长" }, 413);
+        }
+
+        let longUrl;
+        try {
+          longUrl = urlSafeBase64Decode(encodedLongUrl.trim());
+        } catch {
+          return jsonResult({ Code: 0, ShortUrl: "", Message: "订阅链接编码无效" }, 400);
+        }
+        if (longUrl.length > 12000) {
+          return jsonResult({ Code: 0, ShortUrl: "", Message: "订阅链接过长" }, 413);
+        }
+
+        let target;
+        try {
+          target = new URL(longUrl);
+        } catch {
+          return jsonResult({ Code: 0, ShortUrl: "", Message: "订阅链接必须是完整的 HTTP/HTTPS URL" }, 400);
+        }
+        if (target.protocol !== "http:" && target.protocol !== "https:") {
+          return jsonResult({ Code: 0, ShortUrl: "", Message: "仅支持 HTTP/HTTPS 订阅链接" }, 400);
+        }
+        if (target.origin === host && /^\/s\//.test(target.pathname)) {
+          return jsonResult({ Code: 0, ShortUrl: "", Message: "不能把短链接再次缩短，以免产生循环跳转" }, 400);
+        }
+
+        const code = await generateShortCode(SHORT_KV);
+        await SHORT_KV.put("psub-short:" + code, target.href);
+
+        return jsonResult({
+          Code: 1,
+          ShortUrl: host + "/s/" + code,
+          Message: ""
+        });
+      } catch (error) {
+        return jsonResult({
+          Code: 0,
+          ShortUrl: "",
+          Message: "短链接生成失败，请检查 KV 绑定与配额"
+        }, 500);
+      }
+    }
+
+    // Resolve short links before the normal subscription-conversion route.
+    const shortMatch = url.pathname.match(/^\/s\/([A-Za-z0-9_-]{8,20})\/?$/);
+    if (shortMatch && (request.method === "GET" || request.method === "HEAD")) {
+      if (!SHORT_KV || typeof SHORT_KV.get !== "function") {
+        return new Response("请先在 Worker 中绑定名为 SHORT_LINKS 的 KV 命名空间", {
+          status: 500,
+          headers: { "Content-Type": "text/plain; charset=UTF-8", "Cache-Control": "no-store" }
+        });
+      }
+      try {
+        const destination = await SHORT_KV.get("psub-short:" + shortMatch[1]);
+        if (!destination) {
+          return new Response("短链接不存在或已失效", {
+            status: 404,
+            headers: { "Content-Type": "text/plain; charset=UTF-8", "Cache-Control": "no-store" }
+          });
+        }
+        const target = new URL(destination);
+        if (target.protocol !== "http:" && target.protocol !== "https:") {
+          return new Response("短链接目标无效", { status: 410 });
+        }
+        return new Response(null, {
+          status: 302,
+          headers: { "Location": target.href, "Cache-Control": "no-store" }
+        });
+      } catch {
+        return new Response("短链接解析失败", { status: 500 });
       }
     }
 
@@ -3053,6 +3159,19 @@ var src_default = {
     return rpResponse;
   }
 };
+async function generateShortCode(kv) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const bytes = crypto.getRandomValues(new Uint8Array(9));
+    const code = btoa(String.fromCharCode(...bytes))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "");
+    // Check for collisions before writing; generated codes carry 72 bits of entropy.
+    if (!(await kv.get("psub-short:" + code))) return code;
+  }
+  throw new Error("Unable to allocate a unique short code");
+}
+
 function replaceInUri(link, replacements, isRecovery) {
   switch (true) {
     case link.startsWith("ss://"):
