@@ -2933,6 +2933,16 @@ var src_default = {
       let modifiedHtml = originalHtml.replace(/https:\/\/bulianglin2023\.dev/, host);
       // Route the panel's built-in short-link action to this Worker.
       modifiedHtml = modifiedHtml.replace(/https:\/\/suo\.yt\/short/g, host + "/short");
+      // Keep the displayed short link in sync when the user generates a new subscription.
+      modifiedHtml = modifiedHtml.replace(
+        'makeUrl:function(){if(""===this.form.sourceSubUrl||""===this.form.clientType)return this.$message.error("订阅链接与客户端为必填项"),!1;var e=',
+        'makeUrl:function(){if(""===this.form.sourceSubUrl||""===this.form.clientType)return this.$message.error("订阅链接与客户端为必填项"),!1;this.curtomShortSubUrl="";var e='
+      );
+      // Surge installation should use the generated short link when available, just like Clash.
+      modifiedHtml = modifiedHtml.replace(
+        'surgeInstall:function(){if(""===this.customSubUrl)return this.$message.error("请先填写必填项，生成订阅链接"),!1;var e="surge://install-config?url=";window.open(e+this.customSubUrl)}',
+        'surgeInstall:function(){if(""===this.customSubUrl)return this.$message.error("请先填写必填项，生成订阅链接"),!1;var e="surge://install-config?url=";window.open(e+encodeURIComponent(""!==this.curtomShortSubUrl?this.curtomShortSubUrl:this.customSubUrl))}'
+      );
       // Inject a short-link row beside the generated subscription URL in the Vue panel.
       const shortUiAnchor = '),t("el-form-item",{staticStyle:{"margin-top":"40px","text-align":"center"},attrs:{"label-width":"0px"}}';
       const shortUiRow = '),t("el-form-item",{attrs:{label:"订阅短链:"}},[t("el-input",{staticClass:"copy-content",attrs:{disabled:"",placeholder:"点击右侧生成短链接"},model:{value:e.curtomShortSubUrl,callback:function(t){e.curtomShortSubUrl=t},expression:"curtomShortSubUrl"}},[t("el-button",{attrs:{slot:"append",type:"primary",loading:e.loading},slot:"append",on:{click:e.makeShortUrl}},[e._v("生成并复制")])],1)],1),' + shortUiAnchor;
